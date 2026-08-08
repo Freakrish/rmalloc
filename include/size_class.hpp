@@ -43,7 +43,6 @@ public:
         while (idx < NUM_CLASSES)
             class_to_size_[idx++] = MAX_SIZE;
 
-        // Build reverse map: size → class index.
         size_t cl = 0;
         for (size_t bytes = 0; bytes <= MAX_SIZE; bytes += 8) {
             while (cl < NUM_CLASSES - 1 && class_to_size_[cl] < bytes) ++cl;

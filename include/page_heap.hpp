@@ -9,14 +9,8 @@
 #  include <sys/mman.h>
 #endif
 
-// Talks directly to the OS. All memory in rmalloc originates here.
-//
-// Allocate() asks the OS for committed, zeroed pages.
-// Free()     returns them — the OS reclaims the physical frames immediately.
-//
-// Every allocation is rounded up to kPageSize (4 KB) so addresses are always
-// page-aligned. CentralFreeList carves pages into same-sized slots;
-// large objects (> 256 KB) get their own span and skip CentralFreeList.
+// All memory in rmalloc originates here. Allocations are rounded up to
+// kPageSize so addresses are always page-aligned.
 
 class PageHeap {
 public:
@@ -30,12 +24,8 @@ public:
         return inst;
     }
 
-    // Returns page-aligned memory, or nullptr on OOM.
-    void* Allocate(size_t bytes) noexcept;
-
-    // bytes must equal what was passed to Allocate.
-    void  Free(void* ptr, size_t bytes) noexcept;
-
+    void*  Allocate(size_t bytes) noexcept;
+    void   Free(void* ptr, size_t bytes) noexcept;
     size_t bytes_in_use() const noexcept { return bytes_in_use_; }
 
 private:

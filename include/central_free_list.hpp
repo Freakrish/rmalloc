@@ -5,8 +5,8 @@
 #include "page_heap.hpp"
 
 // Shared pool of free slots, one per size class.
-// When a slab runs dry it asks PageHeap for a full page and carves it into slots.
-// One spinlock per size class — threads of different sizes never block each other.
+// On underflow, carves a fresh OS page into same-sized slots.
+// One spinlock per size class to minimize contention between threads.
 
 class CentralFreeList {
 public:
@@ -18,17 +18,12 @@ public:
         return inst;
     }
 
-    // Pop up to `want` objects into dst. Returns count moved.
     size_t FetchBatch(size_t cl, FreeList& dst, size_t want) noexcept;
-
-    // Push up to `count` objects from src into the central list for cl.
-    void ReturnBatch(size_t cl, FreeList& src, size_t count) noexcept;
+    void   ReturnBatch(size_t cl, FreeList& src, size_t count) noexcept;
 
 private:
     CentralFreeList() = default;
 
-    // Carve one OS page into slots and push them onto the slab list.
-    // Called under the slab lock.
     void Refill(size_t cl) noexcept;
 
     struct Slab {
@@ -41,10 +36,7 @@ private:
 
 inline void CentralFreeList::Refill(size_t cl) noexcept {
     const size_t slot_size  = kSizeClass.class_size(cl);
-    // Allocate at least one full page; for slots larger than a page, one slot.
-    const size_t alloc_size = slot_size > PageHeap::kPageSize
-                                ? slot_size
-                                : PageHeap::kPageSize;
+    const size_t alloc_size = slot_size > PageHeap::kPageSize ? slot_size : PageHeap::kPageSize;
 
     char* span = static_cast<char*>(PageHeap::Instance().Allocate(alloc_size));
     if (!span) return;

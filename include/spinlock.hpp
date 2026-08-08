@@ -1,10 +1,6 @@
 #pragma once
 #include <atomic>
 
-// Spinlock built on std::atomic_flag — the only type the standard guarantees
-// is truly lock-free. Suitable for short critical sections like a list pop/push.
-// For long sections, prefer std::mutex (sleeps the thread instead of spinning).
-
 class Spinlock {
 public:
     void lock()   noexcept { while (flag_.test_and_set(std::memory_order_acquire)) {} }
@@ -14,9 +10,7 @@ private:
     std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
 };
 
-// RAII lock guard — acquires on construction, releases on destruction.
-// Works with any type that has lock() / unlock(), including Spinlock.
-// This is exactly what std::lock_guard does in the standard library.
+// RAII wrapper — mirrors std::lock_guard, works with any lock() / unlock() type.
 template<typename Lock>
 class LockGuard {
 public:

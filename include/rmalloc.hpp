@@ -2,22 +2,6 @@
 #include "thread_cache.hpp"
 #include <new>
 
-// Public API for rmalloc.
-//
-// operator new/delete are defined in src/rmalloc.cpp.
-// Include this header to get the declarations; link rmalloc.cpp to activate them.
-//
-// Memory layout of every small allocation:
-//
-//   raw ptr (from ThreadCache)
-//   |
-//   [ size_t n | ---- user data (n bytes) ---- ]
-//               |
-//               returned to caller
-//
-// The 8-byte header lets operator delete(void*) know the original size
-// without a PageMap. Large objects (>256KB) go straight to PageHeap.
-
 static constexpr size_t kHdrSize = sizeof(size_t);
 
 inline void* rmalloc(size_t n) noexcept {
@@ -36,6 +20,5 @@ inline void rmfree(void* p) noexcept {
 
 inline void rmfree(void* p, size_t n) noexcept {
     if (!p) return;
-    void* raw = static_cast<char*>(p) - kHdrSize;
-    ThreadCache::GetCache()->Deallocate(raw, n + kHdrSize);
+    ThreadCache::GetCache()->Deallocate(static_cast<char*>(p) - kHdrSize, n + kHdrSize);
 }
