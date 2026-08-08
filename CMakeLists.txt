@@ -11,5 +11,10 @@ find_package(Threads REQUIRED)
 add_library(rmalloc INTERFACE)
 target_include_directories(rmalloc INTERFACE include/)
 
-add_executable(demo src/demo.cpp)
+add_executable(demo src/demo.cpp src/rmalloc.cpp)
 target_link_libraries(demo PRIVATE rmalloc Threads::Threads)
+
+# bench calls rmalloc()/rmfree() directly — no operator new override
+add_executable(bench src/bench.cpp)
+target_link_libraries(bench PRIVATE rmalloc Threads::Threads)
+target_compile_options(bench PRIVATE -O2)

@@ -2,14 +2,16 @@
 #include "free_list.hpp"
 #include "size_class.hpp"
 #include "central_free_list.hpp"
+#include "page_heap.hpp"
 
 // Per-thread allocation cache. Each thread holds one FreeList per size class
 // so that small allocations never contend on a lock.
 //
 // Hot path  (cache hit)  : O(1) pop/push, no lock.
-// Cold path (cache miss) : batch-fetch BATCH_SIZE slots from central.
-// Overflow               : return half the list back to central.
-// Large objects (>256KB) : bypass the cache, go straight to central.
+// Cold path (cache miss) : batch-fetch BATCH_SIZE slots from CentralFreeList.
+// Overflow               : return half the list back to CentralFreeList.
+// Large objects (>256KB) : skip the cache, go straight to PageHeap.
+
 class ThreadCache {
 public:
     static constexpr size_t BATCH_SIZE = 32;
@@ -34,7 +36,7 @@ inline ThreadCache* ThreadCache::GetCache() noexcept {
 inline void* ThreadCache::Allocate(size_t bytes) noexcept {
     if (bytes == 0) bytes = 1;
     if (bytes > SizeClass::MAX_SIZE)
-        return central::allocate(bytes);
+        return PageHeap::Instance().Allocate(bytes);
 
     size_t    cl   = kSizeClass.size_class(bytes);
     FreeList& list = lists_[cl];
@@ -48,7 +50,7 @@ inline void* ThreadCache::Allocate(size_t bytes) noexcept {
 inline void ThreadCache::Deallocate(void* ptr, size_t bytes) noexcept {
     if (!ptr) return;
     if (bytes > SizeClass::MAX_SIZE) {
-        central::deallocate(ptr, bytes);
+        PageHeap::Instance().Free(ptr, bytes);
         return;
     }
 
