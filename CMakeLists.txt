@@ -6,8 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+find_package(Threads REQUIRED)
+
 add_library(rmalloc INTERFACE)
 target_include_directories(rmalloc INTERFACE include/)
 
 add_executable(demo src/demo.cpp)
-target_link_libraries(demo PRIVATE rmalloc)
+target_link_libraries(demo PRIVATE rmalloc Threads::Threads)

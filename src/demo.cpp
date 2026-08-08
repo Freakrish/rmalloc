@@ -3,18 +3,15 @@
 #include <vector>
 #include "size_class.hpp"
 #include "thread_cache.hpp"
+#include "central_free_list.hpp"
 
 static void print_section(const char* title) {
     std::cout << "\n=== " << title << " ===\n";
 }
 
 static void demo_size_classes() {
-    print_section("All 88 size classes");
-    for (size_t i = 0; i < SizeClass::NUM_CLASSES; ++i)
-        std::cout << "  class[" << i << "] = " << kSizeClass.class_size(i) << " bytes\n";
-
-    print_section("Request -> size class");
-    size_t reqs[] = {1, 7, 8, 9, 16, 17, 32, 33, 64, 100, 128, 129, 256, 1024, 65536, 262144};
+    print_section("Size classes");
+    size_t reqs[] = {1, 7, 8, 9, 16, 17, 32, 64, 100, 128, 256, 1024, 65536, 262144};
     for (size_t req : reqs) {
         size_t sc   = kSizeClass.size_class(req);
         size_t slot = kSizeClass.class_size(sc);
@@ -41,13 +38,34 @@ static void demo_thread_cache() {
     tc->Deallocate(p2, 20);
 
     void* p3 = tc->Allocate(20);
-    assert(p3 == p2 && "LIFO: must reuse most-recently-freed slot");
-    std::cout << "  p3=" << p3 << "  (reused p2 — cache hit)\n";
+    assert(p3 == p2);
+    std::cout << "  p3=" << p3 << "  (reused — cache hit)\n";
     tc->Deallocate(p3, 20);
 }
 
+static void demo_central_free_list() {
+    print_section("CentralFreeList — batch fetch / return");
+
+    // Simulate what two thread caches would do when sharing the central pool.
+    FreeList a, b;
+
+    // a fetches a batch for size class of 64 bytes
+    size_t cl      = kSizeClass.size_class(64);
+    size_t fetched = CentralFreeList::Instance().FetchBatch(cl, a, 16);
+    std::cout << "  fetched " << fetched << " slots into list-a\n";
+
+    // b fetches from the same class — hits the same slab, same spinlock
+    size_t fetched2 = CentralFreeList::Instance().FetchBatch(cl, b, 8);
+    std::cout << "  fetched " << fetched2 << " slots into list-b\n";
+
+    // return both batches
+    CentralFreeList::Instance().ReturnBatch(cl, a, a.length());
+    CentralFreeList::Instance().ReturnBatch(cl, b, b.length());
+    std::cout << "  returned both batches\n";
+}
+
 static void demo_batch_fetch() {
-    print_section("Batch fetch (512B slots, first use of this class)");
+    print_section("ThreadCache — batch fetch via CentralFreeList");
 
     ThreadCache* tc = ThreadCache::GetCache();
     std::vector<void*> ptrs;
@@ -64,6 +82,7 @@ static void demo_batch_fetch() {
 int main() {
     demo_size_classes();
     demo_thread_cache();
+    demo_central_free_list();
     demo_batch_fetch();
     std::cout << "\nAll demos passed.\n";
 }

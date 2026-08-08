@@ -1,7 +1,7 @@
 #pragma once
 #include "free_list.hpp"
 #include "size_class.hpp"
-#include "central_stub.hpp"
+#include "central_free_list.hpp"
 
 // Per-thread allocation cache. Each thread holds one FreeList per size class
 // so that small allocations never contend on a lock.
@@ -10,14 +10,6 @@
 // Cold path (cache miss) : batch-fetch BATCH_SIZE slots from central.
 // Overflow               : return half the list back to central.
 // Large objects (>256KB) : bypass the cache, go straight to central.
-//
-//   Thread A          Thread B
-//   [ThreadCache]     [ThreadCache]   <- independent, no sharing
-//        |                 |
-//        +--------+--------+
-//                 |
-//           [central::]               <- shared (currently malloc)
-
 class ThreadCache {
 public:
     static constexpr size_t BATCH_SIZE = 32;
@@ -25,7 +17,6 @@ public:
     void* Allocate(size_t bytes) noexcept;
     void  Deallocate(void* ptr, size_t bytes) noexcept;
 
-    // Returns this thread's cache instance (thread_local singleton).
     static ThreadCache* GetCache() noexcept;
 
 private:
@@ -70,19 +61,11 @@ inline void ThreadCache::Deallocate(void* ptr, size_t bytes) noexcept {
 }
 
 inline void* ThreadCache::FetchFromCentral(size_t cl) noexcept {
-    const size_t slot = kSizeClass.class_size(cl);
-    for (size_t i = 0; i < BATCH_SIZE; ++i) {
-        void* obj = central::allocate(slot);
-        if (!obj) break;
-        lists_[cl].push(obj);
-    }
+    CentralFreeList::Instance().FetchBatch(cl, lists_[cl], BATCH_SIZE);
     return lists_[cl].pop();
 }
 
 inline void ThreadCache::ReturnToCentral(size_t cl) noexcept {
-    const size_t slot   = kSizeClass.class_size(cl);
-    FreeList&    list   = lists_[cl];
-    const size_t target = list.length() / 2;
-    for (size_t i = 0; i < target; ++i)
-        central::deallocate(list.pop(), slot);
+    const size_t count = lists_[cl].length() / 2;
+    CentralFreeList::Instance().ReturnBatch(cl, lists_[cl], count);
 }
