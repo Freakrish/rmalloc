@@ -54,6 +54,15 @@ public:
         return class_to_size_[sc];
     }
 
+    constexpr size_t batch_size(size_t sc) const noexcept {
+        size_t sz = class_to_size_[sc];
+        if (sz == 0) return 1;
+        size_t n = 4096 / sz;
+        if (n < 1)  return 1;
+        if (n > 32) return 32;
+        return n;
+    }
+
     constexpr size_t size_class(size_t bytes) const noexcept {
         if (bytes == 0) bytes = 1;
         size_t rounded = (bytes + 7) & ~size_t(7);

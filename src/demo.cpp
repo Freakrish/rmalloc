@@ -115,6 +115,7 @@ static void demo_central_stats() {
     std::cout << "  " << std::left
               << std::setw(6)  << "class"
               << std::setw(10) << "slot(B)"
+              << std::setw(10) << "batch"
               << std::setw(10) << "refills"
               << std::setw(10) << "cached"
               << "\n";
@@ -125,6 +126,7 @@ static void demo_central_stats() {
         std::cout << "  "
                   << std::setw(6)  << cl
                   << std::setw(10) << kSizeClass.class_size(cl)
+                  << std::setw(10) << kSizeClass.batch_size(cl)
                   << std::setw(10) << s.refills
                   << std::setw(10) << s.cached
                   << "\n";

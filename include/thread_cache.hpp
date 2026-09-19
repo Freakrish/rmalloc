@@ -6,7 +6,6 @@
 
 class ThreadCache {
 public:
-    static constexpr size_t BATCH_SIZE = 32;
 
     void  Flush() noexcept;
     void* Allocate(size_t bytes) noexcept;
@@ -116,11 +115,12 @@ inline void ThreadCache::Deallocate(void* ptr, size_t bytes) noexcept {
 }
 
 inline void* ThreadCache::FetchFromCentral(size_t cl) noexcept {
-    CentralFreeList::Instance().FetchBatch(cl, lists_[cl], BATCH_SIZE);
+    CentralFreeList::Instance().FetchBatch(cl, lists_[cl], kSizeClass.batch_size(cl));
     return lists_[cl].pop();
 }
 
 inline void ThreadCache::ReturnToCentral(size_t cl) noexcept {
-    const size_t count = lists_[cl].length() / 2;
-    CentralFreeList::Instance().ReturnBatch(cl, lists_[cl], count);
+    const size_t keep  = kSizeClass.batch_size(cl);
+    const size_t count = lists_[cl].length() > keep ? lists_[cl].length() - keep : 0;
+    if (count) CentralFreeList::Instance().ReturnBatch(cl, lists_[cl], count);
 }
