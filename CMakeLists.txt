@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+if(WIN32)
+    add_compile_definitions(_WIN32_WINNT=0x0600 WINVER=0x0600)
+endif()
+
 find_package(Threads REQUIRED)
 
 add_library(rmalloc INTERFACE)

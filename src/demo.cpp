@@ -3,7 +3,9 @@
 #include <vector>
 #include <string>
 #include "rmalloc.hpp"
+#include <process.h>
 #include "page_heap.hpp"
+#include "central_free_list.hpp"
 
 static void print_section(const char* title) {
     std::cout << "\n=== " << title << " ===\n";
@@ -54,7 +56,7 @@ static void demo_stl_containers() {
 static void demo_page_heap_tracking() {
     print_section("PageHeap — bytes_in_use tracking");
 
-    PageHeap& ph  = PageHeap::Instance();
+    PageHeap& ph    = PageHeap::Instance();
     size_t    before = ph.bytes_in_use();
 
     int*    a = new int(1);
@@ -78,11 +80,39 @@ static void demo_nothrow() {
     operator delete(p);
 }
 
+// Worker allocates 50 slots into its ThreadCache then exits.
+// The FLS destructor (tc_fls_destroy) calls Flush(), returning
+// whatever slots remain in the cache to CentralFreeList.
+static unsigned __stdcall leak_worker(void*) {
+    ThreadCache* tc = ThreadCache::GetCache();
+    for (int i = 0; i < 50; ++i)
+        tc->Allocate(64);
+    return 0;
+}
+
+static void demo_thread_cache_flush() {
+    print_section("ThreadCache flush on thread exit (FLS destructor)");
+
+    constexpr size_t SZ = 64;
+    const size_t     cl = kSizeClass.size_class(SZ);
+
+    HANDLE h = (HANDLE)_beginthreadex(nullptr, 0, leak_worker, nullptr, 0, nullptr);
+    WaitForSingleObject(h, INFINITE);
+    CloseHandle(h);
+
+    FreeList recovered;
+    CentralFreeList::Instance().FetchBatch(cl, recovered, 50);
+    std::cout << "  thread held 50 allocs; FLS destructor recovered "
+              << recovered.length() << " slots to CentralFreeList\n";
+    CentralFreeList::Instance().ReturnBatch(cl, recovered, recovered.length());
+}
+
 int main() {
     demo_scalar_new_delete();
     demo_array_new_delete();
     demo_stl_containers();
     demo_page_heap_tracking();
     demo_nothrow();
+    demo_thread_cache_flush();
     std::cout << "\nAll demos passed.\n";
 }

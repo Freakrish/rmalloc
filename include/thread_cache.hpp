@@ -4,18 +4,11 @@
 #include "central_free_list.hpp"
 #include "page_heap.hpp"
 
-// Per-thread allocation cache. Each thread holds one FreeList per size class
-// so that small allocations never contend on a lock.
-//
-// Hot path  (cache hit)  : O(1) pop/push, no lock.
-// Cold path (cache miss) : batch-fetch BATCH_SIZE slots from CentralFreeList.
-// Overflow               : return half the list back to CentralFreeList.
-// Large objects (>256KB) : skip the cache, go straight to PageHeap.
-
 class ThreadCache {
 public:
     static constexpr size_t BATCH_SIZE = 32;
 
+    void  Flush() noexcept;
     void* Allocate(size_t bytes) noexcept;
     void  Deallocate(void* ptr, size_t bytes) noexcept;
 
@@ -28,10 +21,70 @@ private:
     void  ReturnToCentral(size_t cl)  noexcept;
 };
 
-inline ThreadCache* ThreadCache::GetCache() noexcept {
-    thread_local ThreadCache cache;
-    return &cache;
+#ifdef _WIN32
+
+// MinGW 6 headers omit FLS; symbols live in kernel32.dll so we declare them.
+#ifndef FLS_OUT_OF_INDEXES
+extern "C" {
+    typedef void (WINAPI *PFLS_CALLBACK_FUNCTION)(PVOID);
+    DWORD WINAPI FlsAlloc(PFLS_CALLBACK_FUNCTION);
+    PVOID WINAPI FlsGetValue(DWORD);
+    BOOL  WINAPI FlsSetValue(DWORD, PVOID);
+    BOOL  WINAPI FlsFree(DWORD);
 }
+#define FLS_OUT_OF_INDEXES ((DWORD)0xFFFFFFFF)
+#endif
+
+// Forward-declare so tc_fls_slot can reference it before the full definition.
+inline void WINAPI tc_fls_destroy(PVOID val);
+
+// One FLS slot shared across all TUs via the inline magic-static.
+inline DWORD tc_fls_slot() noexcept {
+    static DWORD s = FlsAlloc(tc_fls_destroy);
+    return s;
+}
+
+inline void ThreadCache::Flush() noexcept {
+    for (size_t cl = 0; cl < SizeClass::NUM_CLASSES; ++cl)
+        if (!lists_[cl].empty())
+            CentralFreeList::Instance().ReturnBatch(cl, lists_[cl], lists_[cl].length());
+}
+
+inline ThreadCache* ThreadCache::GetCache() noexcept {
+    DWORD slot = tc_fls_slot();
+    if (slot == FLS_OUT_OF_INDEXES) return nullptr;
+    void* p = FlsGetValue(slot);
+    if (!p) {
+        p = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ThreadCache));
+        if (p) FlsSetValue(slot, p);
+    }
+    return static_cast<ThreadCache*>(p);
+}
+
+// Windows calls this when any thread exits; p is the ThreadCache for that thread.
+inline void WINAPI tc_fls_destroy(PVOID p) {
+    if (!p) return;
+    static_cast<ThreadCache*>(p)->Flush();
+    HeapFree(GetProcessHeap(), 0, p);
+}
+
+#else  // POSIX: thread_local + destructor works correctly
+
+inline void ThreadCache::Flush() noexcept {
+    for (size_t cl = 0; cl < SizeClass::NUM_CLASSES; ++cl)
+        if (!lists_[cl].empty())
+            CentralFreeList::Instance().ReturnBatch(cl, lists_[cl], lists_[cl].length());
+}
+
+inline ThreadCache* ThreadCache::GetCache() noexcept {
+    static thread_local struct Guard {
+        ThreadCache tc;
+        ~Guard() { tc.Flush(); }
+    } g;
+    return &g.tc;
+}
+
+#endif
 
 inline void* ThreadCache::Allocate(size_t bytes) noexcept {
     if (bytes == 0) bytes = 1;
