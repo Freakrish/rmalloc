@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <cassert>
 #include <vector>
 #include <string>
@@ -107,6 +108,29 @@ static void demo_thread_cache_flush() {
     CentralFreeList::Instance().ReturnBatch(cl, recovered, recovered.length());
 }
 
+static void demo_central_stats() {
+    print_section("CentralFreeList per-class stats");
+
+    CentralFreeList& cfl = CentralFreeList::Instance();
+    std::cout << "  " << std::left
+              << std::setw(6)  << "class"
+              << std::setw(10) << "slot(B)"
+              << std::setw(10) << "refills"
+              << std::setw(10) << "cached"
+              << "\n";
+
+    for (size_t cl = 0; cl < SizeClass::NUM_CLASSES; ++cl) {
+        auto s = cfl.stats(cl);
+        if (s.refills == 0) continue;
+        std::cout << "  "
+                  << std::setw(6)  << cl
+                  << std::setw(10) << kSizeClass.class_size(cl)
+                  << std::setw(10) << s.refills
+                  << std::setw(10) << s.cached
+                  << "\n";
+    }
+}
+
 int main() {
     demo_scalar_new_delete();
     demo_array_new_delete();
@@ -114,5 +138,6 @@ int main() {
     demo_page_heap_tracking();
     demo_nothrow();
     demo_thread_cache_flush();
+    demo_central_stats();
     std::cout << "\nAll demos passed.\n";
 }

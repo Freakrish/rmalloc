@@ -18,8 +18,14 @@ public:
         return inst;
     }
 
-    size_t FetchBatch(size_t cl, FreeList& dst, size_t want) noexcept;
-    void   ReturnBatch(size_t cl, FreeList& src, size_t count) noexcept;
+    struct SlabStats {
+        size_t refills;   // times this class ran dry and needed a new page
+        size_t cached;    // slots currently sitting in the central slab
+    };
+
+    size_t   FetchBatch(size_t cl, FreeList& dst, size_t want) noexcept;
+    void     ReturnBatch(size_t cl, FreeList& src, size_t count) noexcept;
+    SlabStats stats(size_t cl) const noexcept;
 
 private:
     CentralFreeList() = default;
@@ -29,6 +35,7 @@ private:
     struct Slab {
         FreeList list;
         Spinlock lock;
+        size_t   refill_count{0};
     };
 
     Slab slabs_[SizeClass::NUM_CLASSES];
@@ -41,9 +48,16 @@ inline void CentralFreeList::Refill(size_t cl) noexcept {
     char* span = static_cast<char*>(PageHeap::Instance().Allocate(alloc_size));
     if (!span) return;
 
+    ++slabs_[cl].refill_count;
     const size_t n_slots = alloc_size / slot_size;
     for (size_t i = 0; i < n_slots; ++i)
         slabs_[cl].list.push(span + i * slot_size);
+}
+
+inline CentralFreeList::SlabStats CentralFreeList::stats(size_t cl) const noexcept {
+    Slab& s = const_cast<Slab&>(slabs_[cl]);
+    LockGuard<Spinlock> lk(s.lock);
+    return { s.refill_count, s.list.length() };
 }
 
 inline size_t CentralFreeList::FetchBatch(size_t cl, FreeList& dst, size_t want) noexcept {
