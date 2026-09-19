@@ -9,9 +9,6 @@
 #  include <sys/mman.h>
 #endif
 
-// All memory in rmalloc originates here. Allocations are rounded up to
-// kPageSize so addresses are always page-aligned.
-
 class PageHeap {
 public:
     static constexpr size_t kPageSize = 4096;

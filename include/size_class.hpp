@@ -2,16 +2,6 @@
 #include <cstddef>
 #include <cstdint>
 
-// Maps allocation sizes to one of 88 buckets (mirrors tcmalloc).
-// Requests are rounded up to the nearest class size to enable slot reuse.
-// Max internal fragmentation is ~12%.
-//
-// Bands (step doubles each band):
-//   8B step:   8 –  128  (16 classes)
-//   16B step: 144 –  256  ( 8 classes)
-//   32B step: 288 –  512  ( 8 classes)
-//   ... up to 256 KB
-
 class SizeClass {
 public:
     static constexpr size_t NUM_CLASSES = 88;

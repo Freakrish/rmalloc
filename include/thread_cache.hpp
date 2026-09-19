@@ -22,7 +22,7 @@ private:
 
 #ifdef _WIN32
 
-// MinGW 6 headers omit FLS; symbols live in kernel32.dll so we declare them.
+// FLS not in MinGW 6 headers but the symbols are in kernel32.dll
 #ifndef FLS_OUT_OF_INDEXES
 extern "C" {
     typedef void (WINAPI *PFLS_CALLBACK_FUNCTION)(PVOID);
@@ -34,10 +34,8 @@ extern "C" {
 #define FLS_OUT_OF_INDEXES ((DWORD)0xFFFFFFFF)
 #endif
 
-// Forward-declare so tc_fls_slot can reference it before the full definition.
 inline void WINAPI tc_fls_destroy(PVOID val);
 
-// One FLS slot shared across all TUs via the inline magic-static.
 inline DWORD tc_fls_slot() noexcept {
     static DWORD s = FlsAlloc(tc_fls_destroy);
     return s;
@@ -60,14 +58,13 @@ inline ThreadCache* ThreadCache::GetCache() noexcept {
     return static_cast<ThreadCache*>(p);
 }
 
-// Windows calls this when any thread exits; p is the ThreadCache for that thread.
 inline void WINAPI tc_fls_destroy(PVOID p) {
     if (!p) return;
     static_cast<ThreadCache*>(p)->Flush();
     HeapFree(GetProcessHeap(), 0, p);
 }
 
-#else  // POSIX: thread_local + destructor works correctly
+#else
 
 inline void ThreadCache::Flush() noexcept {
     for (size_t cl = 0; cl < SizeClass::NUM_CLASSES; ++cl)

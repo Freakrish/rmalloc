@@ -10,7 +10,6 @@ private:
     std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
 };
 
-// RAII wrapper — mirrors std::lock_guard, works with any lock() / unlock() type.
 template<typename Lock>
 class LockGuard {
 public:

@@ -4,10 +4,6 @@
 #include "spinlock.hpp"
 #include "page_heap.hpp"
 
-// Shared pool of free slots, one per size class.
-// On underflow, carves a fresh OS page into same-sized slots.
-// One spinlock per size class to minimize contention between threads.
-
 class CentralFreeList {
 public:
     CentralFreeList(const CentralFreeList&)            = delete;
@@ -19,8 +15,8 @@ public:
     }
 
     struct SlabStats {
-        size_t refills;   // times this class ran dry and needed a new page
-        size_t cached;    // slots currently sitting in the central slab
+        size_t refills;
+        size_t cached;
     };
 
     size_t   FetchBatch(size_t cl, FreeList& dst, size_t want) noexcept;

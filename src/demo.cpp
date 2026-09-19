@@ -8,138 +8,105 @@
 #include "page_heap.hpp"
 #include "central_free_list.hpp"
 
-static void print_section(const char* title) {
-    std::cout << "\n=== " << title << " ===\n";
-}
-
 struct Point {
     double x, y, z;
     Point(double x, double y, double z) : x(x), y(y), z(z) {}
 };
 
-static void demo_scalar_new_delete() {
-    print_section("scalar new / delete");
+static void test_basics() {
+    puts("\n--- new / delete ---");
 
     int* n = new int(42);
-    std::cout << "  new int(42)  = " << *n << "  @ " << n << "\n";
+    printf("  int:   %d  @ %p\n", *n, n);
     delete n;
 
-    Point* p = new Point(1.0, 2.0, 3.0);
-    std::cout << "  new Point    = (" << p->x << ", " << p->y << ", " << p->z << ")  @ " << p << "\n";
+    Point* p = new Point(1, 2, 3);
+    printf("  Point: (%.0f, %.0f, %.0f)  @ %p\n", p->x, p->y, p->z, p);
     delete p;
-}
-
-static void demo_array_new_delete() {
-    print_section("array new[] / delete[]");
 
     int* arr = new int[10];
     for (int i = 0; i < 10; ++i) arr[i] = i * i;
-    std::cout << "  arr[9] = " << arr[9] << "\n";
+    printf("  arr[9] = %d\n", arr[9]);
     delete[] arr;
-
-    double* buf = new double[64];
-    buf[0] = 3.14;
-    std::cout << "  buf[0] = " << buf[0] << "\n";
-    delete[] buf;
 }
 
-static void demo_stl_containers() {
-    print_section("STL containers (all use operator new internally)");
+static void test_stl() {
+    puts("\n--- STL ---");
 
     std::vector<int> v;
     for (int i = 0; i < 100; ++i) v.push_back(i);
-    std::cout << "  vector<int> size=" << v.size() << "  back=" << v.back() << "\n";
+    std::cout << "  vector size=" << v.size() << " back=" << v.back() << "\n";
 
-    std::string s = "rmalloc is handling this string's heap allocation";
-    std::cout << "  string: \"" << s << "\"\n";
+    std::string s = "rmalloc owns this";
+    std::cout << "  string: " << s << "\n";
 }
 
-static void demo_page_heap_tracking() {
-    print_section("PageHeap — bytes_in_use tracking");
+static void test_pageheap() {
+    puts("\n--- PageHeap tracking ---");
 
-    PageHeap& ph    = PageHeap::Instance();
-    size_t    before = ph.bytes_in_use();
+    PageHeap& ph = PageHeap::Instance();
+    size_t before = ph.bytes_in_use();
 
     int*    a = new int(1);
     double* b = new double[100];
     Point*  c = new Point(0, 0, 0);
 
-    std::cout << "  3 allocations done\n";
-    std::cout << "  PageHeap delta = " << ph.bytes_in_use() - before << "B\n";
+    printf("  delta = %zuB\n", ph.bytes_in_use() - before);
 
-    delete a;
-    delete[] b;
-    delete c;
+    delete a; delete[] b; delete c;
 }
 
-static void demo_nothrow() {
-    print_section("nothrow new — returns nullptr on failure");
+static void test_nothrow() {
+    puts("\n--- nothrow new ---");
 
     void* p = operator new(16, std::nothrow);
     assert(p);
-    std::cout << "  nothrow new(16) @ " << p << "\n";
+    printf("  got %p\n", p);
     operator delete(p);
 }
 
-// Worker allocates 50 slots into its ThreadCache then exits.
-// The FLS destructor (tc_fls_destroy) calls Flush(), returning
-// whatever slots remain in the cache to CentralFreeList.
-static unsigned __stdcall leak_worker(void*) {
+static unsigned __stdcall worker(void*) {
     ThreadCache* tc = ThreadCache::GetCache();
     for (int i = 0; i < 50; ++i)
         tc->Allocate(64);
     return 0;
 }
 
-static void demo_thread_cache_flush() {
-    print_section("ThreadCache flush on thread exit (FLS destructor)");
+static void test_flush() {
+    puts("\n--- thread cache flush ---");
 
-    constexpr size_t SZ = 64;
-    const size_t     cl = kSizeClass.size_class(SZ);
+    size_t cl = kSizeClass.size_class(64);
 
-    HANDLE h = (HANDLE)_beginthreadex(nullptr, 0, leak_worker, nullptr, 0, nullptr);
+    HANDLE h = (HANDLE)_beginthreadex(nullptr, 0, worker, nullptr, 0, nullptr);
     WaitForSingleObject(h, INFINITE);
     CloseHandle(h);
 
-    FreeList recovered;
-    CentralFreeList::Instance().FetchBatch(cl, recovered, 50);
-    std::cout << "  thread held 50 allocs; FLS destructor recovered "
-              << recovered.length() << " slots to CentralFreeList\n";
-    CentralFreeList::Instance().ReturnBatch(cl, recovered, recovered.length());
+    FreeList got;
+    CentralFreeList::Instance().FetchBatch(cl, got, 50);
+    printf("  recovered %zu slots\n", got.length());
+    CentralFreeList::Instance().ReturnBatch(cl, got, got.length());
 }
 
-static void demo_central_stats() {
-    print_section("CentralFreeList per-class stats");
+static void test_stats() {
+    puts("\n--- central free list stats ---");
 
     CentralFreeList& cfl = CentralFreeList::Instance();
-    std::cout << "  " << std::left
-              << std::setw(6)  << "class"
-              << std::setw(10) << "slot(B)"
-              << std::setw(10) << "batch"
-              << std::setw(10) << "refills"
-              << std::setw(10) << "cached"
-              << "\n";
+    printf("  %-6s %-8s %-8s %-8s %-8s\n", "class", "slot", "batch", "refills", "cached");
 
     for (size_t cl = 0; cl < SizeClass::NUM_CLASSES; ++cl) {
         auto s = cfl.stats(cl);
         if (s.refills == 0) continue;
-        std::cout << "  "
-                  << std::setw(6)  << cl
-                  << std::setw(10) << kSizeClass.class_size(cl)
-                  << std::setw(10) << kSizeClass.batch_size(cl)
-                  << std::setw(10) << s.refills
-                  << std::setw(10) << s.cached
-                  << "\n";
+        printf("  %-6zu %-8zu %-8zu %-8zu %-8zu\n",
+               cl, kSizeClass.class_size(cl), kSizeClass.batch_size(cl),
+               s.refills, s.cached);
     }
 }
 
 int main() {
-    demo_scalar_new_delete();
-    demo_array_new_delete();
-    demo_stl_containers();
-    demo_page_heap_tracking();
-    demo_nothrow();
-    demo_thread_cache_flush();
-    demo_central_stats();
-    std::cout << "\nAll demos passed.\n";
+    test_basics();
+    test_stl();
+    test_pageheap();
+    test_nothrow();
+    test_flush();
+    test_stats();
 }

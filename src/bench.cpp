@@ -20,8 +20,6 @@ static void  rm_free  (void*  p) { rmfree(p); }
 static void* sys_alloc(size_t n) { return std::malloc(n); }
 static void  sys_free (void*  p) { std::free(p); }
 
-// Run alloc+free until at least min_ms milliseconds have elapsed.
-// Returns average ns per alloc+free pair.
 static double bench_latency(AllocFn alloc, FreeFn fre, size_t size, int min_ms = 200) {
     // warmup
     for (int i = 0; i < 512; ++i) {
@@ -47,7 +45,6 @@ static double bench_latency(AllocFn alloc, FreeFn fre, size_t size, int min_ms =
     return total_ns / iters;
 }
 
-// Batch alloc N objects, then free them all.
 static double bench_throughput(AllocFn alloc, FreeFn fre, size_t size, int n) {
     std::vector<void*> ptrs(n, nullptr);
 
